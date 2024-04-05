@@ -20,17 +20,28 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.content.ContextCompat
 import android.Manifest
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityCompat
 import com.example.stepcounter.ui.theme.StepCounterTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity(), SensorEventListener {
 
@@ -41,16 +52,34 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var previousTotalSteps = 0f
 
     private var stepsTaken by mutableStateOf("0")
+    private var goalSteps by mutableStateOf("10000")
+    private var isGoalSet by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val sharedPrefs = getSharedPreferences("myPrefs", Context.MODE_PRIVATE)
+
         setContent {
             StepCounterTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    StepCounterLayout(steps = stepsTaken, "10000", resetSteps = ::resetSteps)
+                if (!isGoalSet) {
+                    GoalInputScreen { goal ->
+                        goalSteps = goal
+                        isGoalSet = true
+                        with(sharedPrefs.edit()) {
+                            putBoolean("isGoalSet", true)
+                            putString("goal", goal)
+                            apply()
+                        }
+                    }
+
+                } else {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = Color(0xFFA1A1A1)
+                    ) {
+                        StepCounterLayout(steps = stepsTaken, goal = goalSteps, resetSteps = ::resetSteps, newGoal = ::newGoal)
+                    }
                 }
             }
         }
@@ -87,6 +116,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         saveData()
     }
 
+    private fun newGoal() {
+        isGoalSet = false
+    }
+
     private fun saveData() {
         val sharedPreferences = getSharedPreferences("myPrefs", Context.MODE_PRIVATE)
         val editor = sharedPreferences.edit()
@@ -105,29 +138,89 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         // Not needed
     }
 }
-
-
 @Composable
-fun StepCounterLayout(steps: String, goal: String, resetSteps: () -> Unit) {
-    val progress = steps.toFloat() / goal.toFloat()
+fun GoalInputScreen(onGoalSet: (String) -> Unit) {
+    var goal by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
 
     Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.DarkGray)
+        ,
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        OutlinedTextField(
+            value = goal,
+            onValueChange = { goal = it },
+            label = { Text("Enter your step goal") },
+            keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+            modifier = Modifier.padding(16.dp)
+        )
+        Button(
+            onClick = {
+                if (goal.isNotEmpty()) {
+                    onGoalSet(goal)
+                    coroutineScope.launch {
+                        // Ensure that the UI is updated after setting the goal
+                        delay(100)
+                    }
+
+                }
+            },
+            enabled = goal.isNotEmpty()
+        ) {
+            Text("Set Goal")
+        }
+    }
+}
+
+@Composable
+fun StepCounterLayout(steps: String, goal: String, resetSteps: () -> Unit, newGoal: () -> Unit) {
+    val progress = steps.toFloat() / goal.toFloat()
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
         Box(
-            contentAlignment = Alignment.Center
+            modifier = Modifier
+                .border(3.dp, Color.Black, shape = RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(12.dp)) // Clip background color to rounded corners
+                .background(Color.Gray) // Set background color for the Box and Buttons
+
         ) {
-            CircularProgressIndicator(
-                progress = progress,
-                modifier = Modifier
-                    .size(256.dp)
-                    .padding(8.dp)
-            )
-            Text(text = "$steps/$goal")
-        }
-        Button(onClick = resetSteps) {
-            Text("Reset")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .padding(3.dp)
+                ) {
+                    CircularProgressIndicator(
+                        progress = progress,
+                        modifier = Modifier
+                            .size(320.dp)
+                            .padding(12.dp),
+                        trackColor = Color.DarkGray,
+                        color = Color.Red
+                    )
+                    Text(text = "$steps/$goal")
+                }
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Button(onClick = resetSteps, modifier = Modifier.padding(8.dp)) {
+                        Text("Reset")
+                    }
+                    Button(onClick = newGoal, modifier = Modifier.padding(8.dp)) {
+                        Text("Change goal")
+                    }
+                }
+            }
         }
     }
 }
@@ -136,6 +229,6 @@ fun StepCounterLayout(steps: String, goal: String, resetSteps: () -> Unit) {
 @Composable
 fun StepCounterLayoutPreview() {
     StepCounterTheme {
-        StepCounterLayout("0", "10000", resetSteps = {})
+        StepCounterLayout("0", "10000", resetSteps = {}, newGoal = {})
     }
 }
